@@ -23,8 +23,8 @@
 
 defined('ABSPATH') or die("No script kiddies please!");
 
-include 'KJ_WP_Text_Rating_DB.php';
-include 'KJ_WP_Text_Rating_Settings.php';
+require_once 'KJ_WP_Text_Rating_DB.php';
+include_once 'KJ_WP_Text_Rating_Settings.php';
 
 class KJ_WP_Text_Rating {
 
