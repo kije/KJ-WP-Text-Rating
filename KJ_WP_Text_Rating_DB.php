@@ -210,6 +210,8 @@ class KJ_WP_Text_Rating_DB {
                 '%s'
             )
         );
+
+        do_action('post_rated');
     }
 
     /**
