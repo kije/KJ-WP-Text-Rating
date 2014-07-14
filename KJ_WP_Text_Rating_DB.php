@@ -1,17 +1,17 @@
 <?php
 /**
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 defined('ABSPATH') or die("No script kiddies please!");
@@ -21,7 +21,8 @@ $kwtr_db_version = "1.0";
 
 define('KJ_WP_TEXT_RATING_DB_TABLE_PREFIX', $wpdb->prefix . 'textrating');
 
-class KJ_WP_Text_Rating_DB {
+class KJ_WP_Text_Rating_DB
+{
     const TABLE_PREFIX = KJ_WP_TEXT_RATING_DB_TABLE_PREFIX;
 
     const USER_TOKEN_COOKIE_NAME = 'KJ_WP_Text_Rating_DB';
@@ -30,7 +31,8 @@ class KJ_WP_Text_Rating_DB {
     /**
      * Installs the plugin
      */
-    public static function install() {
+    public static function install()
+    {
         global $wpdb;
         global $kwtr_db_version;
 
@@ -76,11 +78,11 @@ class KJ_WP_Text_Rating_DB {
             $wpdb->prefix
         );
 
-        require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 
-        dbDelta( $sql );
+        dbDelta($sql);
 
-        add_option( "kwtr_db_version", $kwtr_db_version );
+        add_option("kwtr_db_version", $kwtr_db_version);
     }
 
     /**
@@ -88,11 +90,12 @@ class KJ_WP_Text_Rating_DB {
      * @param $key
      * @param $value
      */
-    public static function setSetting($key, $value) {
+    public static function setSetting($key, $value)
+    {
         global $wpdb;
 
         $wpdb->replace(
-            self::TABLE_PREFIX.'_settings',
+            self::TABLE_PREFIX . '_settings',
             array(
                 'settings_key' => $key,
                 'settings_value' => $value
@@ -108,9 +111,10 @@ class KJ_WP_Text_Rating_DB {
      * Get all Settings
      * @return mixed
      */
-    public static function getSettings() {
+    public static function getSettings()
+    {
         global $wpdb;
-        return  $wpdb->get_results(sprintf('SELECT * FROM %1$s_settings;', self::TABLE_PREFIX) , OBJECT);
+        return $wpdb->get_results(sprintf('SELECT * FROM %1$s_settings;', self::TABLE_PREFIX), OBJECT);
     }
 
     /**
@@ -119,10 +123,13 @@ class KJ_WP_Text_Rating_DB {
      * @param null|mixed $default
      * @return null|mixed
      */
-    public static function getSetting($key, $default = null) {
+    public static function getSetting($key, $default = null)
+    {
         global $wpdb;
 
-        $res = $wpdb->get_var( sprintf('SELECT settings_value FROM %1$s_settings WHERE settings_key = %2$s;', self::TABLE_PREFIX, $key) );
+        $res = $wpdb->get_var(
+            sprintf('SELECT settings_value FROM %1$s_settings WHERE settings_key = %2$s;', self::TABLE_PREFIX, $key)
+        );
         return ($res ? $res : $default);
     }
 
@@ -131,11 +138,12 @@ class KJ_WP_Text_Rating_DB {
      * @param $name
      * @param $valence the valence of the term. Values < 0 means negative rating, > 0 means positive rating
      */
-    public static function addTerm($name, $valence) {
+    public static function addTerm($name, $valence)
+    {
         global $wpdb;
 
         $wpdb->replace(
-            self::TABLE_PREFIX.'_terms',
+            self::TABLE_PREFIX . '_terms',
             array(
                 'name' => $name,
                 'valence' => $valence
@@ -151,9 +159,10 @@ class KJ_WP_Text_Rating_DB {
      * Get all terms
      * @return mixed
      */
-    public static function getTerms() {
+    public static function getTerms()
+    {
         global $wpdb;
-        return  $wpdb->get_results(sprintf('SELECT * FROM %1$s_terms;', self::TABLE_PREFIX) , OBJECT);
+        return $wpdb->get_results(sprintf('SELECT * FROM %1$s_terms;', self::TABLE_PREFIX), OBJECT);
     }
 
 
@@ -162,10 +171,13 @@ class KJ_WP_Text_Rating_DB {
      * @param $name the name or the id of the Term
      * @return mixed
      */
-    public static function getTerm($name) {
+    public static function getTerm($name)
+    {
         global $wpdb;
 
-        return $wpdb->get_row( sprintf('SELECT * FROM %1$s_terms WHERE name = %2$s OR id = %2$s;', self::TABLE_PREFIX, $name) );
+        return $wpdb->get_row(
+            sprintf('SELECT * FROM %1$s_terms WHERE name = %2$s OR id = %2$s;', self::TABLE_PREFIX, $name)
+        );
     }
 
 
@@ -175,7 +187,8 @@ class KJ_WP_Text_Rating_DB {
      * @param int|WP_Post $post
      * @param string $rating_token
      */
-    public static function addRating($term, $post) {
+    public static function addRating($term, $post)
+    {
         global $wpdb;
 
         $post_id = $post;
@@ -198,7 +211,7 @@ class KJ_WP_Text_Rating_DB {
         }
 
         $wpdb->replace(
-            self::TABLE_PREFIX.'_ratings',
+            self::TABLE_PREFIX . '_ratings',
             array(
                 'name' => $term_id,
                 'valence' => $post_id,
@@ -218,9 +231,10 @@ class KJ_WP_Text_Rating_DB {
      * Get all ratings
      * @return mixed
      */
-    public static function getRatings() {
+    public static function getRatings()
+    {
         global $wpdb;
-        return  $wpdb->get_results(sprintf('SELECT * FROM %1$s_ratings;', self::TABLE_PREFIX) , OBJECT);
+        return $wpdb->get_results(sprintf('SELECT * FROM %1$s_ratings;', self::TABLE_PREFIX), OBJECT);
     }
 
     /**
@@ -228,7 +242,8 @@ class KJ_WP_Text_Rating_DB {
      * @param WP_Post|int $post
      * @return mixed
      */
-    public static function getRatingsByPost($post) {
+    public static function getRatingsByPost($post)
+    {
         global $wpdb;
         $post_id = $post;
 
@@ -241,11 +256,65 @@ class KJ_WP_Text_Rating_DB {
         );
     }
 
+
+    /**
+     * @param $post
+     * @return mixed
+     */
+    public static function getGroupedRatingsByPost($post)
+    {
+        global $wpdb;
+        $post_id = $post;
+
+        if (is_object($post_id)) {
+            $post_id = $post_id->ID;
+        }
+
+        return $wpdb->get_results(
+            sprintf(
+                'SELECT id,date,sum(termi_id),$post_id,user_token FROM %1$s_ratings WHERE post_id = %2$d GROUP BY post_id;',
+                self::TABLE_PREFIX,
+                $post_id
+            )
+        );
+    }
+
+    public static function getScore($post)
+    {
+        global $wpdb;
+        $post_id = $post;
+
+        if (is_object($post_id)) {
+            $post_id = $post_id->ID;
+        }
+
+        return $wpdb->get_var(
+            sprintf(
+                '
+                            SELECT
+                                SUM(terms.valence) AS score
+                            FROM %1$s_ratings AS rating
+                                LEFT JOIN %1$s_terms AS terms
+                                    ON terms.id = rating.term_id
+                            WHERE rating.post_id = %2$d;
+                ',
+                self::TABLE_PREFIX,
+                $post_id
+            )
+        );
+    }
+
+    public static function getBestTerm() {
+
+    }
+
+
     /**
      * @param string|int|object $term the term, its id or the term name
      * @return mixed
      */
-    public static function getRatingByTerm($term) {
+    public static function getRatingByTerm($term)
+    {
         global $wpdb;
 
         $term_id = $term;
@@ -266,18 +335,19 @@ class KJ_WP_Text_Rating_DB {
      * Sets the user-token.
      * Must be called before headers are sent
      */
-    public static function tokenizeUser() {
+    public static function tokenizeUser()
+    {
         if (headers_sent()) {
             return;
         }
 
         $token = sha1(
-            $_SERVER['REMOTE_ADDR'].
+            $_SERVER['REMOTE_ADDR'] .
             microtime()
         );
 
         if (!self::userHasToken()) {
-            setcookie(self::USER_TOKEN_COOKIE_NAME, $token, time()+60*60*24*365);
+            setcookie(self::USER_TOKEN_COOKIE_NAME, $token, time() + 60 * 60 * 24 * 365);
             self::$user_token = $token;
         }
     }
@@ -286,7 +356,8 @@ class KJ_WP_Text_Rating_DB {
      * Checks if the user has a token
      * @return bool
      */
-    public static function userHasToken() {
+    public static function userHasToken()
+    {
         if (isset($_COOKIE[self::USER_TOKEN_COOKIE_NAME]) && !empty($_COOKIE[self::USER_TOKEN_COOKIE_NAME])) {
             if (!self::$user_token) {
                 self::$user_token = $_COOKIE[self::USER_TOKEN_COOKIE_NAME];
@@ -303,14 +374,15 @@ class KJ_WP_Text_Rating_DB {
      * @param $post
      * @return bool
      */
-    public static function userMayRatePost($post) {
+    public static function userMayRatePost($post)
+    {
         if (!self::userHasToken()) {
             return false;
         }
 
         $ratings = self::getRatingsByPost($post);
 
-        foreach($ratings as $rating) {
+        foreach ($ratings as $rating) {
             if ($rating->rating_token == self::$user_token) {
                 return false;
             }
@@ -320,6 +392,6 @@ class KJ_WP_Text_Rating_DB {
     }
 }
 
-register_activation_hook( __FILE__, array('KJ_WP_Text_Rating_DB', 'install') );
+register_activation_hook(__FILE__, array('KJ_WP_Text_Rating_DB', 'install'));
 
 KJ_WP_Text_Rating_DB::tokenizeUser();
