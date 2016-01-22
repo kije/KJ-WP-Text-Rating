@@ -17,6 +17,7 @@
 defined('ABSPATH') or die("No script kiddies please!");
 
 global $kwtr_db_version;
+global $wpdb;
 $kwtr_db_version = "1.0";
 
 define('KJ_WP_TEXT_RATING_DB_TABLE_PREFIX', $wpdb->prefix . 'textrating');
@@ -43,42 +44,54 @@ class KJ_WP_Text_Rating_DB
                 settings_value VARCHAR(300),
 
                 PRIMARY KEY (settings_key,settings_value)
-            ) ENGINE = INNODB COLLATE utf8_unicode_ci ;
+            ) ENGINE = INNODB ;
+            ',
+            self::TABLE_PREFIX,
+            $wpdb->prefix
+        );
 
 
-            CREATE TABLE IF NOT EXISTS %1$s_terms (
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+
+        dbDelta($sql);
+
+        $sql = sprintf('
+         CREATE TABLE IF NOT EXISTS %1$s_terms (
                 id INT AUTO_INCREMENT,
                 name VARCHAR(50) NOT NULL,
                 valence DOUBLE NOT NULL DEFAULT 0 COMMENT "Values < 0 means negative rating, > 0 means positive rating",
 
                 PRIMARY KEY (id),
                 CONSTRAINT %1$s_rating_words_name UNIQUE (name)
-            ) ENGINE = INNODB COLLATE utf8_unicode_ci;
-
-            -- Table for ratings
-            CREATE TABLE IF NOT EXISTS %1$s_ratings (
-              id INT AUTO_INCREMENT,
-              date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              term_id INT NOT NULL,
-              post_id BIGINT(20) NOT NULL,
-
-              user_token VARCHAR(250) NOT NULL COMMENT "Unique Token by User. To prevent multiple ratings from the same visitor on the same post.",
-
-              PRIMARY KEY (id),
-              CONSTRAINT %1$s_ratings_terms FOREIGN KEY (term_id) REFERENCES %1$s_terms(id)
-                ON DELETE CASCADE
-                ON UPDATE CASCADE,
-              CONSTRAINT %1$s_ratings_%2$s_posts FOREIGN KEY (post_id) REFERENCES %2$s_posts(ID)
-                ON DELETE CASCADE
-                ON UPDATE CASCADE,
-              CONSTRAINT %1$s_ratings_unique_token  UNIQUE (post_id,rating_token)
-            ) ENGINE = INNODB COLLATE utf8_unicode_ci;
+            ) ENGINE = INNODB;
             ',
             self::TABLE_PREFIX,
             $wpdb->prefix
         );
 
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        $sql = sprintf('
+
+
+            CREATE TABLE IF NOT EXISTS %1$s_ratings (
+              id INT AUTO_INCREMENT,
+              `rating_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              term_id INT NOT NULL,
+              post_id BIGINT unsigned  NOT NULL,
+
+              user_token VARCHAR(250) NOT NULL,
+
+              PRIMARY KEY (id),
+              FOREIGN KEY (term_id) REFERENCES %1$s_terms (id),
+              CONSTRAINT %1$s_ratings_unique_token UNIQUE (post_id,user_token),
+              CONSTRAINT %1$s_ratings_index_term INDEX (term_id),
+              CONSTRAINT %1$s_ratings_index_post INDEX (post_id)
+            ) ENGINE = INNODB;
+            ',
+            self::TABLE_PREFIX,
+            $wpdb->prefix
+        );
 
         dbDelta($sql);
 
@@ -162,24 +175,8 @@ class KJ_WP_Text_Rating_DB
     public static function getTerms()
     {
         global $wpdb;
-        return $wpdb->get_results(sprintf('SELECT * FROM %1$s_terms;', self::TABLE_PREFIX), OBJECT);
+        return $wpdb->get_results(sprintf('SELECT * FROM %1$s_terms ORDER BY valence DESC;', self::TABLE_PREFIX), OBJECT);
     }
-
-
-    /**
-     * Get a Term by name or id
-     * @param $name the name or the id of the Term
-     * @return mixed
-     */
-    public static function getTerm($name)
-    {
-        global $wpdb;
-
-        return $wpdb->get_row(
-            sprintf('SELECT * FROM %1$s_terms WHERE name = %2$s OR id = %2$s;', self::TABLE_PREFIX, $name)
-        );
-    }
-
 
     /**
      * Add a rating
@@ -197,9 +194,10 @@ class KJ_WP_Text_Rating_DB
             $post_id = $post_id->ID;
         }
 
-        if (self::userMayRatePost($post)) {
+        if (!self::userMayRatePost($post)) {
             return;
         }
+
 
         $term_id = $term;
 
@@ -213,8 +211,8 @@ class KJ_WP_Text_Rating_DB
         $wpdb->replace(
             self::TABLE_PREFIX . '_ratings',
             array(
-                'name' => $term_id,
-                'valence' => $post_id,
+                'term_id' => $term_id,
+                'post_id' => $post_id,
                 'user_token' => self::$user_token
             ),
             array(
@@ -228,13 +226,42 @@ class KJ_WP_Text_Rating_DB
     }
 
     /**
-     * Get all ratings
-     * @return mixed
+     * Checks if the user is allowed to rate a post
+     * @param $post
+     * @return bool
      */
-    public static function getRatings()
+    public static function userMayRatePost($post)
     {
-        global $wpdb;
-        return $wpdb->get_results(sprintf('SELECT * FROM %1$s_ratings;', self::TABLE_PREFIX), OBJECT);
+        if (!self::userHasToken()) {
+            return false;
+        }
+
+        $ratings = self::getRatingsByPost($post);
+
+        foreach ($ratings as $rating) {
+            if ($rating->user_token == self::$user_token) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Checks if the user has a token
+     * @return bool
+     */
+    public static function userHasToken()
+    {
+        if (isset($_COOKIE[self::USER_TOKEN_COOKIE_NAME]) && !empty($_COOKIE[self::USER_TOKEN_COOKIE_NAME])) {
+            if (!self::$user_token) {
+                self::$user_token = $_COOKIE[self::USER_TOKEN_COOKIE_NAME];
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -252,10 +279,54 @@ class KJ_WP_Text_Rating_DB
         }
 
         return $wpdb->get_results(
-            sprintf('SELECT * FROM %1$s_ratings WHERE post_id = %2$d;', self::TABLE_PREFIX, $post_id)
+            sprintf('SELECT * FROM %1$s_ratings WHERE post_id = %2$d;', self::TABLE_PREFIX, $wpdb->_escape($post_id))
         );
     }
 
+    /**
+     * Get a Term by name or id
+     * @param string|int|object $name the name or the id of the Term
+     * @return mixed
+     */
+    public static function getTerm($name)
+    {
+        global $wpdb;
+
+
+        return $wpdb->get_row(
+            sprintf('SELECT * FROM %1$s_terms WHERE name = %2$s OR id = %2$s;', self::TABLE_PREFIX, $wpdb->_escape($name))
+        );
+    }
+
+    /**
+     * Get all ratings
+     * @return mixed
+     */
+    public static function getRatings($term = false, $post = false)
+    {
+        global $wpdb;
+        if ($term && $post) {
+            $post_id = $post;
+
+            if (is_object($post_id)) {
+                $post_id = $post_id->ID;
+            }
+
+            $term_id = $term;
+
+            if (!is_numeric($term_id) && is_string($term_id)) {
+                $term_id = self::getTerm($term_id);
+            }
+            if (is_object($term_id)) {
+                $term_id = $term_id->id;
+            }
+
+            return $wpdb->get_results(sprintf('SELECT * FROM %1$s_ratings WHERE term_id = %2$s AND post_id = %3$s;', self::TABLE_PREFIX, $wpdb->_escape($term_id), $wpdb->_escape($post_id)), OBJECT);
+        } else {
+            return $wpdb->get_results(sprintf('SELECT * FROM %1$s_ratings;', self::TABLE_PREFIX), OBJECT);
+        }
+
+    }
 
     /**
      * @param $post
@@ -274,7 +345,7 @@ class KJ_WP_Text_Rating_DB
             sprintf(
                 'SELECT id,date,sum(termi_id),$post_id,user_token FROM %1$s_ratings WHERE post_id = %2$d GROUP BY post_id;',
                 self::TABLE_PREFIX,
-                $post_id
+                $wpdb->_escape($post_id)
             )
         );
     }
@@ -299,13 +370,9 @@ class KJ_WP_Text_Rating_DB
                             WHERE rating.post_id = %2$d;
                 ',
                 self::TABLE_PREFIX,
-                $post_id
+                $wpdb->_escape($post_id)
             )
         );
-    }
-
-    public static function getBestTerm() {
-
     }
 
 
@@ -327,7 +394,7 @@ class KJ_WP_Text_Rating_DB
         }
 
         return $wpdb->get_results(
-            sprintf('SELECT * FROM %1$s_ratings WHERE term_id = %2$d;', self::TABLE_PREFIX, $term_id)
+            sprintf('SELECT * FROM %1$s_ratings WHERE term_id = %2$d;', self::TABLE_PREFIX, $wpdb->_escape($term_id))
         );
     }
 
@@ -352,46 +419,196 @@ class KJ_WP_Text_Rating_DB
         }
     }
 
-    /**
-     * Checks if the user has a token
-     * @return bool
-     */
-    public static function userHasToken()
-    {
-        if (isset($_COOKIE[self::USER_TOKEN_COOKIE_NAME]) && !empty($_COOKIE[self::USER_TOKEN_COOKIE_NAME])) {
-            if (!self::$user_token) {
-                self::$user_token = $_COOKIE[self::USER_TOKEN_COOKIE_NAME];
-            }
 
-            return true;
+    public static function getBestRatedPost($exclude_posts = array()) {
+        global $wpdb;
+
+        $exclude_clause = '';
+
+        if (!empty($exclude_posts)) {
+            $exclude_clause = ' AND rating.post_id NOT IN ('.implode(',', $exclude_posts).') ';
         }
 
-        return false;
+        $top_post = $wpdb->get_row(
+            sprintf('
+                SELECT
+                    rating.post_id AS id,
+                    sum(term.valence) AS score
+                FROM %1$s_ratings AS rating
+                    LEFT JOIN %1$s_terms AS term
+                        ON term.id = rating.term_id
+                    LEFT JOIN %3$sposts AS post
+                      ON post.ID = rating.post_id
+                WHERE rating.rating_time > (UTC_TIMESTAMP() - INTERVAL 6 WEEK)
+                %2$s AND
+                post.post_status = "publish"
+                GROUP BY rating.post_id
+                ORDER BY score DESC
+                LIMIT 1
+                        ',
+                self::TABLE_PREFIX,
+                $exclude_clause,
+                $wpdb->prefix
+            )
+        );
+
+
+        if ($top_post) {
+            return get_post($top_post->id);
+        }
     }
 
-    /**
-     * Checks if the user is allowed to rate a post
-     * @param $post
-     * @return bool
-     */
-    public static function userMayRatePost($post)
-    {
-        if (!self::userHasToken()) {
-            return false;
+    public static function getBestTermForPost($post) {
+        global $wpdb;
+
+        $post_id = $post;
+
+        if (is_object($post_id)) {
+            $post_id = $post_id->ID;
         }
 
-        $ratings = self::getRatingsByPost($post);
+        $top_term = $wpdb->get_var(
+            sprintf('
+                SELECT
+                    term.id
+                FROM %1$s_ratings AS rating
+                    LEFT JOIN %1$s_terms AS term
+                        ON term.id = rating.term_id
+                WHERE rating.post_id = %2$d AND term.valence > 0
+                ORDER BY term.valence DESC
+                LIMIT 1;
+                        ',
+                self::TABLE_PREFIX,
+                $post_id
+            )
+        );
 
-        foreach ($ratings as $rating) {
-            if ($rating->rating_token == self::$user_token) {
-                return false;
-            }
+        if ($top_term) {
+            return KJ_WP_Text_Rating_DB::getTerm($top_term);
         }
 
-        return true;
+        return null;
+    }
+
+
+    public static function getPostsForTerm($term) {
+        global $wpdb;
+
+        $term_id = $term;
+
+        if (!is_numeric($term_id) && is_string($term_id)) {
+            $term_id = self::getTerm($term_id);
+        }
+        if (is_object($term_id)) {
+            $term_id = $term_id->id;
+        }
+
+        $post_ids = $wpdb->get_results(
+            sprintf(
+                '
+                SELECT post_id FROM %1$s_ratings WHERE term_id = %2$d;
+                ',
+
+                self::TABLE_PREFIX,
+                $term_id
+            )
+        );
+
+        $res = array();
+
+        foreach($post_ids as $post_id) {
+            $res[] = get_post($post_id);
+        }
+
+        return $res;
+    }
+
+    public static function getBestRatedPosts($exclude_posts = array()) {
+        global $wpdb;
+
+        $exclude_clause = '';
+
+        if (!empty($exclude_posts)) {
+            $exclude_clause = ' AND rating.post_id NOT IN ('.implode(',', $exclude_posts).') ';
+        }
+
+        $top_posts = $wpdb->get_results(
+            sprintf('
+                SELECT
+                    rating.post_id AS id,
+                    sum(term.valence) AS score,
+                    (
+                      SELECT t.id FROM
+                      %1$s_ratings AS r
+                      LEFT JOIN %1$s_terms AS t
+                        ON t.id = r.term_id
+                      WHERE t.valence > 0
+                      ORDER BY t.valence DESC
+                      LIMIT 1
+
+                    ) AS max_valence_id,
+                    rating.term_id AS rating_term_id
+                FROM %1$s_ratings AS rating
+                    LEFT JOIN %1$s_terms AS term
+                        ON term.id = rating.term_id
+                    LEFT JOIN %3$sposts AS post
+                      ON post.ID = rating.post_id
+                WHERE rating.rating_time > UTC_TIMESTAMP() - INTERVAL 6 WEEK
+                %2$s AND
+                post.post_status = "publish"
+                GROUP BY rating.post_id
+                 HAVING rating_term_id = max_valence_id
+                ORDER BY score DESC, rating.rating_time DESC;
+                        ',
+                self::TABLE_PREFIX,
+                $exclude_clause,
+                $wpdb->prefix
+            )
+        );
+
+
+        $res = array();
+
+        foreach($top_posts as $top_post) {
+            $res[] = get_post($top_post->id);
+        }
+
+
+        return $res;
+    }
+
+    public static function getAllRatedPosts() {
+        global $wpdb;
+
+        $top_posts = $wpdb->get_results(
+            sprintf('SELECT DISTINCT post_id as id FROM %1$s_ratings ORDER BY rating_time DESC;',
+                self::TABLE_PREFIX
+            )
+        );
+
+
+        $res = array();
+
+        foreach($top_posts as $top_post) {
+            $res[] = get_post($top_post->id);
+        }
+
+        return $res;
+
+    }
+
+    public static function deleteRatingsForPost($post) {
+        global $wpdb;
+
+        $post_id = $post;
+
+        if (is_object($post_id)) {
+            $post_id = $post_id->ID;
+        }
+
+        return $wpdb->delete( self::TABLE_PREFIX.'_ratings', array( 'post_id' => $post_id ), array( '%d' ) );
     }
 }
 
-register_activation_hook(__FILE__, array('KJ_WP_Text_Rating_DB', 'install'));
 
 KJ_WP_Text_Rating_DB::tokenizeUser();
